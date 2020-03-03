@@ -51,7 +51,7 @@ public:
 
 private:
 	static void SaveActorState(AActor* InActor, APrefabActor* PrefabActor, FPrefabricatorActorData& OutActorData);
-	static void LoadActorState(AActor* InActor, const FPrefabricatorActorData& InActorData, const FPrefabLoadSettings& InSettings);
+	static void LoadActorState(AActor* InActor, FPrefabricatorActorData& InActorData, const FPrefabLoadSettings& InSettings);
 
 };
 

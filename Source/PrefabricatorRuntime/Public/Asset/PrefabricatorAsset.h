@@ -48,9 +48,19 @@ struct PREFABRICATORRUNTIME_API FPrefabricatorComponentData {
 
 	UPROPERTY()
 	FString ComponentName;
-
+	
 	UPROPERTY()
 	TArray<UPrefabricatorProperty*> Properties;
+
+	UPROPERTY()
+	TArray<uint8> SerializeProperties;
+};
+
+UENUM()
+enum class EPrefabSerializationMode : uint8 {
+	Unknown,
+	TextImportExport,
+	BinaryArchiver
 };
 
 USTRUCT()
@@ -73,7 +83,13 @@ struct PREFABRICATORRUNTIME_API FPrefabricatorActorData {
 	TArray<UPrefabricatorProperty*> Properties;
 
 	UPROPERTY()
+	TArray<uint8> SerializeProperties;
+
+	UPROPERTY()
 	TArray<FPrefabricatorComponentData> Components;
+
+	UPROPERTY()
+	EPrefabSerializationMode SerializationMode = EPrefabSerializationMode::TextImportExport;
 
 #if WITH_EDITORONLY_DATA
 	UPROPERTY()

@@ -301,6 +301,63 @@ namespace {
 		return false;
 	}
 
+	class FPropertyRestore {
+	public:
+		FPropertyRestore(UObject* InObj, const TArray<FString>& InPropertyNames) 
+			: Obj(InObj)
+		{
+			for (const FString& PropertyName : InPropertyNames) {
+				FString PropertyValue;
+				bool bValid = PropertyPathHelpers::GetPropertyValueAsString(Obj, PropertyName, PropertyValue);
+				ValidList.Add(bValid);
+				PropertyNames.Add(PropertyName);
+				PropertyValues.Add(PropertyValue);
+			}
+		}
+
+		~FPropertyRestore() {
+			for (int i = 0; i < PropertyNames.Num(); i++) {
+				bool bIsValid = ValidList[i];
+				if (bIsValid) {
+					const FString& PropertyName = PropertyNames[i];
+					const FString& PropertyValue = PropertyValues[i];
+
+					PropertyPathHelpers::SetPropertyValueFromString(Obj, PropertyName, PropertyValue);
+				}
+			}
+		}
+
+	private:
+		UObject* Obj = nullptr;
+
+		TArray<bool> ValidList;
+		TArray<FString> PropertyNames;
+		TArray<FString> PropertyValues;
+	};
+
+	void DeserializeFields(UObject* InObjToDeserialize, TArray<uint8>& InSerializedData) {
+		if (!InObjToDeserialize) return;
+
+		FPropertyRestore Restore(InObjToDeserialize, {
+			"AttachParent",
+			"AttachSocketName",
+			"AttachChildren",
+			"ClientAttachedChildren",
+			"bIsEditorPreviewActor",
+			"bIsEditorOnlyActor"
+			});
+
+		FObjectReader ObjectReader(InObjToDeserialize, InSerializedData, false, false);
+	}
+
+	void SerializeFields(UObject* ObjToSerialize, TArray<uint8>& OutSerializedData) {
+		if (!ObjToSerialize) return;
+		OutSerializedData.Reset();
+		uint32 PortFlags = PPF_CheckReferences | PPF_Duplicate;
+		
+		FObjectWriter ObjectWriter(ObjToSerialize, OutSerializedData, false, false, PortFlags);
+	}
+
 	void DeserializeFields(UObject* InObjToDeserialize, const TArray<UPrefabricatorProperty*>& InProperties) {
 		if (!InObjToDeserialize) return;
 
@@ -457,13 +514,28 @@ void FPrefabTools::SaveActorState(AActor* InActor, APrefabActor* PrefabActor, FP
 {
 	if (!InActor) return;
 
+
 	FTransform InversePrefabTransform = PrefabActor->GetTransform().Inverse();
 	FTransform LocalTransform = InActor->GetTransform() * InversePrefabTransform;
 	OutActorData.RelativeTransform = LocalTransform;
 	FString ClassPath = InActor->GetClass()->GetPathName();
 	OutActorData.ClassPathRef = FSoftClassPath(ClassPath);
 	OutActorData.ClassPath = ClassPath;
+
+	// Use binary serialization when saved
+	OutActorData.SerializationMode = EPrefabSerializationMode::BinaryArchiver;
+
+	// Force text serialization for actor properties
 	SerializeFields(InActor, PrefabActor, OutActorData.Properties);
+	/*
+	if (OutActorData.SerializationMode == EPrefabSerializationMode::TextImportExport) {
+		SerializeFields(InActor, PrefabActor, OutActorData.Properties);
+	}
+	else if (OutActorData.SerializationMode == EPrefabSerializationMode::BinaryArchiver) {
+		SerializeFields(InActor, OutActorData.SerializeProperties);
+	}
+	*/
+	
 
 #if WITH_EDITOR
 	OutActorData.ActorName = InActor->GetActorLabel();
@@ -482,16 +554,27 @@ void FPrefabTools::SaveActorState(AActor* InActor, APrefabActor* PrefabActor, FP
 		else {
 			ComponentData.RelativeTransform = FTransform::Identity;
 		}
-		SerializeFields(Component, PrefabActor, ComponentData.Properties);
+
+		if (OutActorData.SerializationMode == EPrefabSerializationMode::TextImportExport) {
+			SerializeFields(Component, PrefabActor, ComponentData.Properties);
+		}
+		else if (OutActorData.SerializationMode == EPrefabSerializationMode::BinaryArchiver) {
+			SerializeFields(Component, ComponentData.SerializeProperties);
+		}
 	}
 
 	//DumpSerializedData(OutActorData);
 }
 
-void FPrefabTools::LoadActorState(AActor* InActor, const FPrefabricatorActorData& InActorData, const FPrefabLoadSettings& InSettings)
+void FPrefabTools::LoadActorState(AActor* InActor, FPrefabricatorActorData& InActorData, const FPrefabLoadSettings& InSettings)
 {
 	if (!InActor) {
 		return;
+	}
+
+	EPrefabSerializationMode Mode = InActorData.SerializationMode;
+	if (Mode == EPrefabSerializationMode::Unknown) {
+		Mode = EPrefabSerializationMode::TextImportExport;
 	}
 
 	TSharedPtr<IPrefabricatorService> Service = FPrefabricatorService::Get();
@@ -501,8 +584,20 @@ void FPrefabTools::LoadActorState(AActor* InActor, const FPrefabricatorActorData
 	}
 
 	{
-		//SCOPE_CYCLE_COUNTER(STAT_LoadStateFromPrefabAsset_DeserializeFieldsActor);
 		DeserializeFields(InActor, InActorData.Properties);
+		/*
+		//SCOPE_CYCLE_COUNTER(STAT_LoadStateFromPrefabAsset_DeserializeFieldsActor);
+		if (Mode == EPrefabSerializationMode::TextImportExport) {
+			DeserializeFields(InActor, InActorData.Properties);
+		}
+		else if (Mode == EPrefabSerializationMode::BinaryArchiver) {
+			AActor* AttachParentActor = InActor->GetAttachParentActor();
+			
+			DeserializeFields(InActor, InActorData.SerializeProperties);
+
+			ParentActors(AttachParentActor, InActor);
+		}
+		*/
 	}
 
 	TMap<FString, UActorComponent*> ComponentsByName;
@@ -512,32 +607,45 @@ void FPrefabTools::LoadActorState(AActor* InActor, const FPrefabricatorActorData
 	}
 
 	{
-		for (const FPrefabricatorComponentData& ComponentData : InActorData.Components) {
+		for (FPrefabricatorComponentData& ComponentData : InActorData.Components) {
 			if (UActorComponent** SearchResult = ComponentsByName.Find(ComponentData.ComponentName)) {
 				UActorComponent* Component = *SearchResult;
-				bool bPreviouslyRegister;
-				{
-					//SCOPE_CYCLE_COUNTER(STAT_LoadStateFromPrefabAsset_UnregisterComponent);
-					bPreviouslyRegister = Component->IsRegistered();
-					if (InSettings.bUnregisterComponentsBeforeLoading && bPreviouslyRegister) {
-						Component->UnregisterComponent();
-					}
-				}
-
-				{
-					//SCOPE_CYCLE_COUNTER(STAT_LoadStateFromPrefabAsset_DeserializeFieldsComponents);
+				if (Mode == EPrefabSerializationMode::TextImportExport) {
 					DeserializeFields(Component, ComponentData.Properties);
-				}
-
-				{
-					//SCOPE_CYCLE_COUNTER(STAT_LoadStateFromPrefabAsset_RegisterComponent);
-					if (InSettings.bUnregisterComponentsBeforeLoading && bPreviouslyRegister) {
-						Component->RegisterComponent();
+					/*
+					bool bPreviouslyRegister;
+					{
+						//SCOPE_CYCLE_COUNTER(STAT_LoadStateFromPrefabAsset_UnregisterComponent);
+						bPreviouslyRegister = Component->IsRegistered();
+						if (InSettings.bUnregisterComponentsBeforeLoading && bPreviouslyRegister) {
+							Component->UnregisterComponent();
+						}
 					}
+
+					{
+						//SCOPE_CYCLE_COUNTER(STAT_LoadStateFromPrefabAsset_DeserializeFieldsComponents);
+						DeserializeFields(Component, ComponentData.Properties);
+					}
+
+					{
+						//SCOPE_CYCLE_COUNTER(STAT_LoadStateFromPrefabAsset_RegisterComponent);
+						if (InSettings.bUnregisterComponentsBeforeLoading && bPreviouslyRegister) {
+							Component->RegisterComponent();
+						}
+					}
+					*/
 				}
+				else if (Mode == EPrefabSerializationMode::BinaryArchiver) {
+					DeserializeFields(Component, ComponentData.SerializeProperties);
+				}
+				Component->PostLoad();
 			}
 		}
 	}
+
+	InActor->PostLoad();
+	InActor->ReregisterAllComponents();
+	InActor->PostActorCreated();
 
 #if WITH_EDITOR
 	if (InActorData.ActorName.Len() > 0) {
@@ -680,27 +788,16 @@ void FPrefabTools::LoadStateFromPrefabAsset(APrefabActor* PrefabActor, const FPr
 				}
 
 				ChildActor = Service->SpawnActor(ActorClass, FTransform::Identity, PrefabActor->GetLevel(), Template);
-				if (!Template) {
-					LoadActorState(ChildActor, ActorItemData, InSettings);
-					if (InState.IsValid()) {
-						InState->PrefabItemTemplates.Add(ActorItemData.PrefabItemID, ChildActor);
-						InState->_Stat_SlowSpawns++;
-					}
+				if (InState.IsValid()) {
+					InState->PrefabItemTemplates.Add(ActorItemData.PrefabItemID, ChildActor);
+					InState->_Stat_SlowSpawns++;
 				}
-				else {
-					if (InState.IsValid()) {
-						InState->_Stat_FastSpawns++;
-					}
-				}
-			}
-		}
-		else {
-			if (InState.IsValid()) {
-				InState->_Stat_ReuseSpawns++;
 			}
 		}
 
 		if (ChildActor) {
+			LoadActorState(ChildActor, ActorItemData, InSettings);
+
 			ParentActors(PrefabActor, ChildActor);
 			AssignAssetUserData(ChildActor, ActorItemData.PrefabItemID, PrefabActor);
 
