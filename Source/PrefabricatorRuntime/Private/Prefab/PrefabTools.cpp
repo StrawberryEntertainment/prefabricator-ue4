@@ -810,7 +810,7 @@ void FPrefabTools::LoadStateFromPrefabAsset(APrefabActor* PrefabActor, const FPr
 				// Create a new child actor.  Try to create it from an existing template actor that is already preset in the scene
 				AActor* Template = nullptr;
 				// Do not mess with PrefabActor's template! But what about other templates!? // Mynrea
-				if (LoadState && InSettings.bCanLoadFromCachedTemplate && !ActorClass->IsChildOf(APrefabActor::StaticClass())) {
+				if (LoadState && InSettings.bCanLoadFromCachedTemplate && !ActorClass->IsChildOf(APrefabActor::StaticClass()) && false) {
 					Template = LoadState->GetTemplate(ActorItemData.PrefabItemID, PrefabAsset->LastUpdateID);
 				}
 
