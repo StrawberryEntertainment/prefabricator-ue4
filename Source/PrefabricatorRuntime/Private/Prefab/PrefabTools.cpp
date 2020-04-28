@@ -720,7 +720,6 @@ FBox FPrefabTools::GetPrefabBounds(AActor* PrefabActor, bool bNonColliding)
 
 void FPrefabTools::LoadStateFromPrefabAsset(APrefabActor* PrefabActor, const FPrefabLoadSettings& InSettings)
 {
-	UE_LOG(LogPrefabTools, Display, TEXT("BEFORE SYNC"), "");
 	SCOPE_CYCLE_COUNTER(STAT_LoadStateFromPrefabAsset);
 	if (!PrefabActor) {
 		UE_LOG(LogPrefabTools, Error, TEXT("Invalid prefab actor reference"));
@@ -729,7 +728,7 @@ void FPrefabTools::LoadStateFromPrefabAsset(APrefabActor* PrefabActor, const FPr
 
 	UPrefabricatorAsset* PrefabAsset = PrefabActor->GetPrefabAsset();
 	if (!PrefabAsset) {
-		UE_LOG(LogPrefabTools, Error, TEXT("Prefab asset is not assigned correctly"));
+		//UE_LOG(LogPrefabTools, Error, TEXT("Prefab asset is not assigned correctly"));
 		return;
 	}
 
@@ -739,6 +738,7 @@ void FPrefabTools::LoadStateFromPrefabAsset(APrefabActor* PrefabActor, const FPr
 	TArray<AActor*> ExistingActorPool;
 	GetActorChildren(PrefabActor, ExistingActorPool);
 
+	//Do not use killed objects! //Mynrea
 	for (int i = 0; i < ExistingActorPool.Num(); i++)
 	{
 		if (ExistingActorPool[i] == nullptr || ExistingActorPool[i]->IsPendingKillPending())
@@ -796,8 +796,6 @@ void FPrefabTools::LoadStateFromPrefabAsset(APrefabActor* PrefabActor, const FPr
 							// We can reuse this actor
 							ExistingActorPool.Remove(ChildActor);
 							ActorByItemID.Remove(ActorItemData.PrefabItemID);
-							auto text = (FString(TEXT("ChildActor ")) + FString::FromInt(reinterpret_cast<uint64>(ChildActor)) + FString(TEXT(" reused!")));
-							UE_LOG(LogPrefabTools, Display, TEXT("%s"), *text);
 						}
 						else {
 							ChildActor = nullptr;
@@ -811,13 +809,12 @@ void FPrefabTools::LoadStateFromPrefabAsset(APrefabActor* PrefabActor, const FPr
 			if (!ChildActor) {
 				// Create a new child actor.  Try to create it from an existing template actor that is already preset in the scene
 				AActor* Template = nullptr;
+				// Do not mess with PrefabActor's template! But what about other templates!? // Mynrea
 				if (LoadState && InSettings.bCanLoadFromCachedTemplate && !ActorClass->IsChildOf(APrefabActor::StaticClass())) {
 					Template = LoadState->GetTemplate(ActorItemData.PrefabItemID, PrefabAsset->LastUpdateID);
 				}
-				UE_LOG(LogPrefabTools, Display, TEXT("Before ChildActorSpawn!"), "");
+
 				ChildActor = Service->SpawnActor(ActorClass, WorldTransform, PrefabActor->GetLevel(), Template);
-				auto text = (FString(TEXT("ChildActor ")) + FString::FromInt(reinterpret_cast<uint64>(ChildActor)) + FString(TEXT(" created!")));
-				UE_LOG(LogPrefabTools, Display, TEXT("%s"), *text);
 				ParentActors(PrefabActor, ChildActor);
 
 				if (Template == nullptr || bPrefabOutOfDate) {
@@ -895,8 +892,6 @@ void FPrefabTools::LoadStateFromPrefabAsset(APrefabActor* PrefabActor, const FPr
 	// Destroy the unused actors from the pool
 	for (AActor* UnusedActor : ExistingActorPool) {
 		DestroyActorTree(UnusedActor);	
-		auto text = (FString(TEXT("ChildActor ")) + FString::FromInt(reinterpret_cast<uint64>(UnusedActor)) + FString(TEXT(" destroyed!")));
-		UE_LOG(LogPrefabTools, Display, TEXT("%s"), *text);
 	}
 
 	PrefabActor->LastUpdateID = PrefabAsset->LastUpdateID;
@@ -904,7 +899,6 @@ void FPrefabTools::LoadStateFromPrefabAsset(APrefabActor* PrefabActor, const FPr
 	if (InSettings.bSynchronousBuild) {
 		PrefabActor->HandleBuildComplete();
 	}
-	UE_LOG(LogPrefabTools, Display, TEXT("AFTER SYNC"), "");
 }
 
 void FPrefabTools::FixupCrossReferences(const TArray<UPrefabricatorProperty*>& PrefabProperties, UObject* ObjToWrite, TMap<FGuid, AActor*>& PrefabItemToActorMap)
