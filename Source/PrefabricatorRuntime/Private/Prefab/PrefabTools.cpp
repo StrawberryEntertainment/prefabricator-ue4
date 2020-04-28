@@ -738,12 +738,20 @@ void FPrefabTools::LoadStateFromPrefabAsset(APrefabActor* PrefabActor, const FPr
 	TArray<AActor*> ExistingActorPool;
 	GetActorChildren(PrefabActor, ExistingActorPool);
 
+	for (int i = 0; i < ExistingActorPool.Num(); i++)
+	{
+		if (ExistingActorPool[i] == nullptr || ExistingActorPool[i]->IsPendingKillPending())
+		{
+			ExistingActorPool.RemoveAt(i--);
+		}
+	}
+
 	FPrefabInstanceTemplates* LoadState = FGlobalPrefabInstanceTemplates::Get();
 	TSharedPtr<IPrefabricatorService> Service = FPrefabricatorService::Get();
 
 	TMap<FGuid, AActor*> ActorByItemID;
 	for (AActor* ExistingActor : ExistingActorPool) {
-		if (ExistingActor && ExistingActor->GetRootComponent()) {
+		if (ExistingActor && ExistingActor->GetRootComponent()) { 
 			UPrefabricatorAssetUserData* PrefabUserData = ExistingActor->GetRootComponent()->GetAssetUserData<UPrefabricatorAssetUserData>();
 			if (PrefabUserData && PrefabUserData->PrefabActor == PrefabActor) {
 				TArray<AActor*> ChildActors;
