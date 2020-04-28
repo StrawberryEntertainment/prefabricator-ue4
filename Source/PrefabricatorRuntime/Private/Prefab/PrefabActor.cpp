@@ -13,12 +13,14 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogPrefabActor, Log, All);
 
-
+#include "Logging/LogMacros.h"
 APrefabActor::APrefabActor(const FObjectInitializer& ObjectInitializer) 
 	: Super(ObjectInitializer)
 {
 	PrefabComponent = ObjectInitializer.CreateDefaultSubobject<UPrefabComponent>(this, "PrefabComponent");
 	RootComponent = PrefabComponent;
+	auto text = (FString(TEXT("PrefabActor ")) + FString::FromInt(reinterpret_cast<uint64>(this)) + FString(TEXT(" created!")));
+	UE_LOG(LogPrefabActor, Display, TEXT("%s"), *text);
 }
 
 namespace {
@@ -47,6 +49,8 @@ void APrefabActor::Destroyed()
 {
 	Super::Destroyed();
 
+	auto text =(FString(TEXT("PrefabActor ")) + FString::FromInt(reinterpret_cast<uint64>(this)) + FString(TEXT(" destroyed!")));
+	UE_LOG(LogPrefabActor, Display, TEXT("%s"), *text);
 	// Destroy all attached actors
 	{
 		TSet<AActor*> Visited;
