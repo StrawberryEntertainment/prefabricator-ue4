@@ -38,6 +38,9 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Prefabricator")
 	UPrefabricatorAsset* GetPrefabAsset();
 
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Prefabricator")
+	UPrefabricatorAssetInterface* GetPrefab() const;
+
 	UFUNCTION(BlueprintCallable, Category = "Prefabricator")
 	void RandomizeSeed(const FRandomStream& InRandom, bool bRecursive = true);
 	void HandleBuildComplete();
