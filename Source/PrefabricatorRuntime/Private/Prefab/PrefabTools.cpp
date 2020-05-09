@@ -300,7 +300,7 @@ void FPrefabTools::SaveStateToPrefabAsset(APrefabActor* PrefabActor)
 }
 
 namespace {
-	bool GetPropertyData(const UProperty* Property, UObject* Obj, UObject* ObjTemplate, FString& OutPropertyData) {
+	bool GetPropertyData(const UProperty* Property, UObject* Obj, UObject * ObjTemplate, FString& OutPropertyData) {
 		if (!Obj || !Property) return false;
 		
 		UObject* DefaultObject = ObjTemplate;
@@ -364,6 +364,14 @@ namespace {
 
 			UProperty* Property = InObjToDeserialize->GetClass()->FindPropertyByName(*PropertyName);
 			if (Property) {
+				// do not overwrite properties that have a default sub object or an archetype object
+				if (UObjectProperty* ObjProperty = Cast<UObjectProperty>(Property)) {
+					UObject* PropertyObjectValue = ObjProperty->GetObjectPropertyValue_InContainer(InObjToDeserialize);
+					if (PropertyObjectValue && PropertyObjectValue->HasAnyFlags(RF_DefaultSubObject | RF_ArchetypeObject)) {
+						continue;
+					}
+				}
+
 				{
 					SCOPE_CYCLE_COUNTER(STAT_DeserializeFields_Iterate_LoadValue);
 					PrefabProperty->LoadReferencedAssetValues();
@@ -407,6 +415,13 @@ namespace {
 				continue;
 			}
 
+			if (const UObjectProperty* ObjProperty = Cast<UObjectProperty>(Property)) {
+				UObject* PropertyObjectValue = ObjProperty->GetObjectPropertyValue_InContainer(ObjToSerialize);
+				if (PropertyObjectValue && PropertyObjectValue->HasAnyFlags(RF_DefaultSubObject | RF_ArchetypeObject)) {
+					continue;
+				}
+			}
+
 			PropertiesToSerialize.Add(Property);
 		}
 
@@ -429,9 +444,14 @@ namespace {
 
 			// Check for cross actor references
 			bool bFoundCrossReference = false;
-			if (const UObjectProperty* ObjectProperty = Cast<UObjectProperty>(Property)) {
-				UObject* PropertyObjectValue = ObjectProperty->GetObjectPropertyValue_InContainer(ObjToSerialize);
+
+			if (const UObjectProperty* ObjProperty = Cast<UObjectProperty>(Property)) {
+				UObject* PropertyObjectValue = ObjProperty->GetObjectPropertyValue_InContainer(ObjToSerialize);
 				if (PropertyObjectValue) {
+					if (PropertyObjectValue->HasAnyFlags(RF_DefaultSubObject | RF_ArchetypeObject)) {
+						continue;
+					}
+
 					FString ObjectPath = PropertyObjectValue->GetPathName();
 					FGuid CrossRefPrefabItem;
 					if (CrossReferences.GetPrefabItemId(ObjectPath, CrossRefPrefabItem)) {
@@ -907,7 +927,7 @@ void FPrefabTools::FixupCrossReferences(const TArray<UPrefabricatorProperty*>& P
 		if (!PrefabProperty || !PrefabProperty->bIsCrossReferencedActor) continue;
 
 		UProperty* Property = ObjToWrite->GetClass()->FindPropertyByName(*PrefabProperty->PropertyName);
-		UObjectProperty* ObjectProperty = Cast<UObjectProperty>(Property);
+		const UObjectProperty* ObjectProperty = Cast<UObjectProperty>(Property);
 		if (!ObjectProperty) continue;
 
 		AActor** SearchResult = PrefabItemToActorMap.Find(PrefabProperty->CrossReferencePrefabActorId);
