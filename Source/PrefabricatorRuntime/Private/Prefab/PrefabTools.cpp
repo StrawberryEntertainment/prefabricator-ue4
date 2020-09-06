@@ -300,7 +300,7 @@ void FPrefabTools::SaveStateToPrefabAsset(APrefabActor* PrefabActor)
 }
 
 namespace {
-	bool GetPropertyData(const UProperty* Property, UObject* Obj, UObject * ObjTemplate, FString& OutPropertyData) {
+	bool GetPropertyData(const FProperty* Property, UObject* Obj, UObject * ObjTemplate, FString& OutPropertyData) {
 		if (!Obj || !Property) return false;
 		
 		UObject* DefaultObject = ObjTemplate;
@@ -341,8 +341,8 @@ namespace {
 		return PropertyValue == DefaultValue;
 	}
 
-	bool ShouldSkipSerialization(const UProperty* Property, UObject* ObjToSerialize, APrefabActor* PrefabActor) {
-		if (const UObjectProperty* ObjProperty = Cast<const UObjectProperty>(Property)) {
+	bool ShouldSkipSerialization(const FProperty* Property, UObject* ObjToSerialize, APrefabActor* PrefabActor) {
+		if (const FObjectProperty* ObjProperty = CastField<FObjectProperty>(Property)) {
 			UObject* PropertyObjectValue = ObjProperty->GetObjectPropertyValue_InContainer(ObjToSerialize);
 			if (ContainsOuterParent(PropertyObjectValue, ObjToSerialize) ||
 				ContainsOuterParent(PropertyObjectValue, PrefabActor)) {
@@ -362,10 +362,10 @@ namespace {
 			FString PropertyName = PrefabProperty->PropertyName;
 			if (PropertyName == "AssetUserData") continue;		// Skip this as assignment is very slow and is not needed
 
-			UProperty* Property = InObjToDeserialize->GetClass()->FindPropertyByName(*PropertyName);
+			FProperty* Property = InObjToDeserialize->GetClass()->FindPropertyByName(*PropertyName);
 			if (Property) {
 				// do not overwrite properties that have a default sub object or an archetype object
-				if (UObjectProperty* ObjProperty = Cast<UObjectProperty>(Property)) {
+				if (FObjectProperty* ObjProperty = CastField<FObjectProperty>(Property)) {
 					UObject* PropertyObjectValue = ObjProperty->GetObjectPropertyValue_InContainer(InObjToDeserialize);
 					if (PropertyObjectValue && PropertyObjectValue->HasAnyFlags(RF_DefaultSubObject | RF_ArchetypeObject)) {
 						continue;
@@ -396,9 +396,9 @@ namespace {
 			return;
 		}
 
-		TSet<const UProperty*> PropertiesToSerialize;
-		for (TFieldIterator<UProperty> PropertyIterator(ObjToSerialize->GetClass()); PropertyIterator; ++PropertyIterator) {
-			UProperty* Property = *PropertyIterator;
+		TSet<const FProperty*> PropertiesToSerialize;
+		for (TFieldIterator<FProperty> PropertyIterator(ObjToSerialize->GetClass()); PropertyIterator; ++PropertyIterator) {
+			FProperty* Property = *PropertyIterator;
 			if (!Property) continue;
 			if (Property->HasAnyPropertyFlags(CPF_Transient)) {
 				continue;
@@ -415,17 +415,18 @@ namespace {
 				continue;
 			}
 
-			if (const UObjectProperty* ObjProperty = Cast<UObjectProperty>(Property)) {
+			if (const FObjectProperty* ObjProperty = CastField<FObjectProperty>(Property)) {
 				UObject* PropertyObjectValue = ObjProperty->GetObjectPropertyValue_InContainer(ObjToSerialize);
 				if (PropertyObjectValue && PropertyObjectValue->HasAnyFlags(RF_DefaultSubObject | RF_ArchetypeObject)) {
 					continue;
 				}
 			}
 
+
 			PropertiesToSerialize.Add(Property);
 		}
 
-		for (const UProperty* Property : PropertiesToSerialize) {
+		for (const FProperty* Property : PropertiesToSerialize) {
 			if (!Property) continue;
 			if (FPrefabTools::ShouldIgnorePropertySerialization(Property->GetFName())) {
 				continue;
@@ -445,7 +446,7 @@ namespace {
 			// Check for cross actor references
 			bool bFoundCrossReference = false;
 
-			if (const UObjectProperty* ObjProperty = Cast<UObjectProperty>(Property)) {
+			if (const FObjectProperty* ObjProperty = CastField<FObjectProperty>(Property)) {
 				UObject* PropertyObjectValue = ObjProperty->GetObjectPropertyValue_InContainer(ObjToSerialize);
 				if (PropertyObjectValue) {
 					if (PropertyObjectValue->HasAnyFlags(RF_DefaultSubObject | RF_ArchetypeObject)) {
@@ -653,14 +654,14 @@ void FPrefabTools::LoadActorState(AActor* InActor, const FPrefabricatorActorData
 		}
 	}
 
+	InActor->PostLoad();
+	InActor->ReregisterAllComponents();
+
 #if WITH_EDITOR
 	if (InActorData.ActorName.Len() > 0) {
 		InActor->SetActorLabel(InActorData.ActorName);
 	}
 #endif // WITH_EDITOR
-
-	InActor->PostLoad();
-	InActor->ReregisterAllComponents();
 
 	if (Service.IsValid()) {
 		SCOPE_CYCLE_COUNTER(STAT_LoadActorState_EndTransaction);
@@ -768,21 +769,12 @@ void FPrefabTools::LoadStateFromPrefabAsset(APrefabActor* PrefabActor, const FPr
 	TArray<AActor*> ExistingActorPool;
 	GetActorChildren(PrefabActor, ExistingActorPool);
 
-	//Do not use killed objects! //Mynrea
-	for (int i = 0; i < ExistingActorPool.Num(); i++)
-	{
-		if (ExistingActorPool[i] == nullptr || ExistingActorPool[i]->IsPendingKillPending())
-		{
-			ExistingActorPool.RemoveAt(i--);
-		}
-	}
-
 	FPrefabInstanceTemplates* LoadState = FGlobalPrefabInstanceTemplates::Get();
 	TSharedPtr<IPrefabricatorService> Service = FPrefabricatorService::Get();
 
 	TMap<FGuid, AActor*> ActorByItemID;
 	for (AActor* ExistingActor : ExistingActorPool) {
-		if (ExistingActor && ExistingActor->GetRootComponent()) { 
+		if (ExistingActor && ExistingActor->GetRootComponent()) {
 			UPrefabricatorAssetUserData* PrefabUserData = ExistingActor->GetRootComponent()->GetAssetUserData<UPrefabricatorAssetUserData>();
 			if (PrefabUserData && PrefabUserData->PrefabActor == PrefabActor) {
 				TArray<AActor*> ChildActors;
@@ -839,12 +831,12 @@ void FPrefabTools::LoadStateFromPrefabAsset(APrefabActor* PrefabActor, const FPr
 			if (!ChildActor) {
 				// Create a new child actor.  Try to create it from an existing template actor that is already preset in the scene
 				AActor* Template = nullptr;
-				// Do not mess with PrefabActor's template! But what about other templates!? // Mynrea
-				if (LoadState && InSettings.bCanLoadFromCachedTemplate && !ActorClass->IsChildOf(APrefabActor::StaticClass()) && false) {
+				if (LoadState && InSettings.bCanLoadFromCachedTemplate) {
 					Template = LoadState->GetTemplate(ActorItemData.PrefabItemID, PrefabAsset->LastUpdateID);
 				}
 
 				ChildActor = Service->SpawnActor(ActorClass, WorldTransform, PrefabActor->GetLevel(), Template);
+
 				ParentActors(PrefabActor, ChildActor);
 
 				if (Template == nullptr || bPrefabOutOfDate) {
@@ -921,7 +913,7 @@ void FPrefabTools::LoadStateFromPrefabAsset(APrefabActor* PrefabActor, const FPr
 
 	// Destroy the unused actors from the pool
 	for (AActor* UnusedActor : ExistingActorPool) {
-		DestroyActorTree(UnusedActor);	
+		DestroyActorTree(UnusedActor);
 	}
 
 	PrefabActor->LastUpdateID = PrefabAsset->LastUpdateID;
@@ -936,8 +928,9 @@ void FPrefabTools::FixupCrossReferences(const TArray<UPrefabricatorProperty*>& P
 	for (UPrefabricatorProperty* PrefabProperty : PrefabProperties) {
 		if (!PrefabProperty || !PrefabProperty->bIsCrossReferencedActor) continue;
 
-		UProperty* Property = ObjToWrite->GetClass()->FindPropertyByName(*PrefabProperty->PropertyName);
-		const UObjectProperty* ObjectProperty = Cast<UObjectProperty>(Property);
+		FProperty* Property = ObjToWrite->GetClass()->FindPropertyByName(*PrefabProperty->PropertyName);
+
+		const FObjectProperty* ObjectProperty = CastField<FObjectProperty>(Property);
 		if (!ObjectProperty) continue;
 
 		AActor** SearchResult = PrefabItemToActorMap.Find(PrefabProperty->CrossReferencePrefabActorId);

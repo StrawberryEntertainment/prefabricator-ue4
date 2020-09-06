@@ -189,11 +189,6 @@ public:
 
 public:
 	virtual UPrefabricatorAsset* GetPrefabAsset(const FPrefabAssetSelectionConfig& InConfig) override;
-
-	TArray<FPrefabricatorAssetCollectionItem> GetPrefabs() const
-	{
-		return Prefabs;
-	}
 };
 
 

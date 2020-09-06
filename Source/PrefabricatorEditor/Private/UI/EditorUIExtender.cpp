@@ -22,7 +22,6 @@
 #include "Framework/Notifications/NotificationManager.h"
 #include "Framework/SlateDelegates.h"
 #include "LevelEditor.h"
-#include "Misc/MessageDialog.h"
 #include "Widgets/Notifications/SNotificationList.h"
 #include "Widgets/SNullWidget.h"
 
@@ -124,12 +123,6 @@ void FEditorUIExtender::Extend()
 			IPrefabricatorEditorModule::Get().UpgradePrefabAssets();
 		}
 
-		static void ShowSampleUnsupportedMessage(FString InMinEngineVersion) {
-			FText Message = FText::FromString("Sample requires engine version " + InMinEngineVersion + " or higher");
-			FText Title = FText::FromString("Engine " + InMinEngineVersion + "+ required");
-			FMessageDialog::Open(EAppMsgType::Ok, EAppReturnType::Ok, Message, &Title);
-		}
-
 		static void OpenSample(FString InPath) {
 			// If there are any unsaved changes to the current level, see if the user wants to save those first.
 			bool bPromptUserToSave = true;
@@ -176,14 +169,14 @@ void FEditorUIExtender::Extend()
 				LOCTEXT("SamplePlatformerLabel", "Platformer Game Demo"),
 				LOCTEXT("SamplePlatformerTooltip", "Demostrates how to build a procedural platformer level with thousands of layout variations"),
 				FSlateIcon(FPrefabEditorStyle::Get().GetStyleSetName(), "ClassIcon.Unreal"),
-				FUIAction(FExecuteAction::CreateStatic(&Local::ShowSampleUnsupportedMessage, FString("4.24")))
+				FUIAction(FExecuteAction::CreateStatic(&Local::OpenSample, PrefabURLs::PATH_SAMPLE_PLATFORMER))
 			);
 
 			MenuBuilder.AddMenuEntry(
 				LOCTEXT("SampleConstructionLabel", "Construction System Demo"),
 				LOCTEXT("SampleConstructionTooltip", "Allow your players to build their own worlds using the Construction System"),
 				FSlateIcon(FPrefabEditorStyle::Get().GetStyleSetName(), "ClassIcon.Unreal"),
-				FUIAction(FExecuteAction::CreateStatic(&Local::ShowSampleUnsupportedMessage, FString("4.24")))
+				FUIAction(FExecuteAction::CreateStatic(&Local::OpenSample, PrefabURLs::PATH_SAMPLE_CONSTRUCTION))
 			);
 		}
 

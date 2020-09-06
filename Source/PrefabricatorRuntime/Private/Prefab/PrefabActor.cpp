@@ -131,11 +131,6 @@ UPrefabricatorAsset* APrefabActor::GetPrefabAsset()
 	return PrefabAssetInterface ? PrefabAssetInterface->GetPrefabAsset(SelectionConfig) : nullptr;
 }
 
-UPrefabricatorAssetInterface* APrefabActor::GetPrefab() const
-{
-	return PrefabComponent->PrefabAssetInterface.LoadSynchronous();
-}
-
 void APrefabActor::RandomizeSeed(const FRandomStream& InRandom, bool bRecursive)
 {
 	Seed = FPrefabTools::GetRandomSeed(InRandom);
